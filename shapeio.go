@@ -16,10 +16,24 @@ type Reader struct {
 	ctx     context.Context
 }
 
+type ReaderAt struct {
+	r       io.ReaderAt
+	limiter *rate.Limiter
+	ctx     context.Context
+}
+
 type Writer struct {
 	w       io.Writer
 	limiter *rate.Limiter
 	ctx     context.Context
+}
+
+// NewReader returns a reader that implements io.Reader with rate limiting.
+func NewReaderAt(r io.ReaderAt) *ReaderAt {
+	return &ReaderAt{
+		r:   r,
+		ctx: context.Background(),
+	}
 }
 
 // NewReader returns a reader that implements io.Reader with rate limiting.
@@ -66,6 +80,27 @@ func (s *Reader) Read(p []byte) (int, error) {
 		return s.r.Read(p)
 	}
 	n, err := s.r.Read(p)
+	if err != nil {
+		return n, err
+	}
+	if err := s.limiter.WaitN(s.ctx, n); err != nil {
+		return n, err
+	}
+	return n, nil
+}
+
+// SetRateLimit sets rate limit (bytes/sec) to the reader.
+func (s *ReaderAt) SetRateLimit(bytesPerSec float64) {
+	s.limiter = rate.NewLimiter(rate.Limit(bytesPerSec), burstLimit)
+	s.limiter.AllowN(time.Now(), burstLimit) // spend initial burst
+}
+
+// Read reads bytes into p.
+func (s *ReaderAt) ReadAt(p []byte, off int64) (int, error) {
+	if s.limiter == nil {
+		return s.r.ReadAt(p, off)
+	}
+	n, err := s.r.ReadAt(p, off)
 	if err != nil {
 		return n, err
 	}
