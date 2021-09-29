@@ -1,4 +1,4 @@
-module github.com/fujiwara/shapeio
+module github.com/yaamai/shapeio
 
 go 1.16
 
